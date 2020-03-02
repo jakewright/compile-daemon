@@ -107,28 +107,29 @@ func (g *globList) Matches(value string) bool {
 }
 
 var (
-	flag_directory       = flag.String("directory", ".", "Directory to watch for changes")
-	flag_pattern         = flag.String("pattern", FilePattern, "Pattern of watched files")
-	flag_command         = flag.String("command", "", "Command to run and restart after build")
-	flag_command_stop    = flag.Bool("command-stop", false, "Stop command before building")
-	flag_recursive       = flag.Bool("recursive", true, "Watch all dirs. recursively")
-	flag_build           = flag.String("build", "go build", "Command to rebuild after changes")
-	flag_build_dir       = flag.String("build-dir", "", "Directory to run build command in.  Defaults to directory")
-	flag_run_dir         = flag.String("run-dir", "", "Directory to run command in.  Defaults to directory")
-	flag_color           = flag.Bool("color", false, "Colorize output for CompileDaemon status messages")
-	flag_logprefix       = flag.Bool("log-prefix", true, "Print log timestamps and subprocess stderr/stdout output")
-	flag_gracefulkill    = flag.Bool("graceful-kill", false, "Gracefully attempt to kill the child process by sending a SIGTERM first")
-	flag_gracefultimeout = flag.Uint("graceful-timeout", 3, "Duration (in seconds) to wait for graceful kill to complete")
-	flag_verbose         = flag.Bool("verbose", false, "Be verbose about which directories are watched.")
+	flagDirectory       = flag.String("directory", ".", "Directory to run commands from")
+	flagDirectories     = flag.String("directories", ".", "Directories to watch for changes")
+	flagPattern         = flag.String("pattern", FilePattern, "Pattern of watched files")
+	flagCommand         = flag.String("command", "", "Command to run and restart after build")
+	flagCommandStop     = flag.Bool("command-stop", false, "Stop command before building")
+	flagRecursive       = flag.Bool("recursive", true, "Watch all dirs. recursively")
+	flagBuild           = flag.String("build", "go build", "Command to rebuild after changes")
+	flagBuildDir        = flag.String("build-dir", "", "Directory to run build command in.  Defaults to directory")
+	flagRunDir          = flag.String("run-dir", "", "Directory to run command in.  Defaults to directory")
+	flagColor           = flag.Bool("color", false, "Colorize output for CompileDaemon status messages")
+	flagLogPrefix       = flag.Bool("log-prefix", true, "Print log timestamps and subprocess stderr/stdout output")
+	flagGracefulKill    = flag.Bool("graceful-kill", false, "Gracefully attempt to kill the child process by sending a SIGTERM first")
+	flagGracefulTimeout = flag.Uint("graceful-timeout", 3, "Duration (in seconds) to wait for graceful kill to complete")
+	flagVerbose         = flag.Bool("verbose", false, "Be verbose about which directories are watched.")
 
 	// initialized in main() due to custom type.
-	flag_excludedDirs  globList
-	flag_excludedFiles globList
-	flag_includedFiles globList
+	flagExcludedDirs  globList
+	flagExcludedFiles globList
+	flagIncludedFiles globList
 )
 
 func okColor(format string, args ...interface{}) string {
-	if *flag_color {
+	if *flagColor {
 		return color.GreenString(format, args...)
 	} else {
 		return fmt.Sprintf(format, args...)
@@ -136,7 +137,7 @@ func okColor(format string, args ...interface{}) string {
 }
 
 func failColor(format string, args ...interface{}) string {
-	if *flag_color {
+	if *flagColor {
 		return color.RedString(format, args...)
 	} else {
 		return fmt.Sprintf(format, args...)
@@ -145,9 +146,9 @@ func failColor(format string, args ...interface{}) string {
 
 // Run `go build` and print the output if something's gone wrong.
 func build() bool {
-	log.Println(okColor("Running build command!"))
+	log.Println(okColor("Running build command"))
 
-	args := strings.Split(*flag_build, " ")
+	args := strings.Split(*flagBuild, " ")
 	if len(args) == 0 {
 		// If the user has specified and empty then we are done.
 		return true
@@ -155,17 +156,15 @@ func build() bool {
 
 	cmd := exec.Command(args[0], args[1:]...)
 
-	if *flag_build_dir != "" {
-		cmd.Dir = *flag_build_dir
+	if *flagBuildDir != "" {
+		cmd.Dir = *flagBuildDir
 	} else {
-		cmd.Dir = *flag_directory
+		cmd.Dir = *flagDirectory
 	}
 
 	output, err := cmd.CombinedOutput()
 
-	if err == nil {
-		log.Println(okColor("Build ok."))
-	} else {
+	if err != nil {
 		log.Println(failColor("Error while building:\n"), failColor(string(output)))
 	}
 
@@ -181,7 +180,7 @@ func matchesPattern(pattern *regexp.Regexp, file string) bool {
 // every incoming job will reset the timer.
 func builder(jobs <-chan string, buildStarted chan<- string, buildDone chan<- bool) {
 	createThreshold := func() <-chan time.Time {
-		return time.After(time.Duration(WorkDelay * time.Millisecond))
+		return time.After(WorkDelay * time.Millisecond)
 	}
 
 	threshold := createThreshold()
@@ -202,15 +201,14 @@ func logger(pipeChan <-chan io.ReadCloser) {
 	dumper := func(pipe io.ReadCloser, prefix string) {
 		reader := bufio.NewReader(pipe)
 
-	readloop:
 		for {
 			line, err := reader.ReadString('\n')
 
 			if err != nil {
-				break readloop
+				break
 			}
 
-			if *flag_logprefix {
+			if *flagLogPrefix {
 				log.Print(prefix, " ", line)
 			} else {
 				log.Print(line)
@@ -231,9 +229,9 @@ func logger(pipeChan <-chan io.ReadCloser) {
 func startCommand(command string) (cmd *exec.Cmd, stdout io.ReadCloser, stderr io.ReadCloser, err error) {
 	args := strings.Split(command, " ")
 	cmd = exec.Command(args[0], args[1:]...)
-	
-	if *flag_run_dir != "" {
-		cmd.Dir = *flag_run_dir
+
+	if *flagRunDir != "" {
+		cmd.Dir = *flagRunDir
 	}
 
 	if stdout, err = cmd.StdoutPipe(); err != nil {
@@ -280,7 +278,7 @@ func runner(commandTemplate string, buildStarted <-chan string, buildSuccess <-c
 		// to suppress warning in returned string.
 		command := fmt.Sprintf("%0.s"+commandTemplate, eventPath)
 
-		if !*flag_command_stop {
+		if !*flagCommandStop {
 			if !<-buildSuccess {
 				continue
 			}
@@ -289,14 +287,14 @@ func runner(commandTemplate string, buildStarted <-chan string, buildSuccess <-c
 		if currentProcess != nil {
 			killProcess(currentProcess)
 		}
-		if *flag_command_stop {
+		if *flagCommandStop {
 			log.Println(okColor("Command stopped. Waiting for build to complete."))
 			if !<-buildSuccess {
 				continue
 			}
 		}
 
-		log.Println(okColor("Restarting the given command."))
+		log.Println(okColor("Restarting the given command"))
 		cmd, stdoutPipe, stderrPipe, err := startCommand(command)
 
 		if err != nil {
@@ -311,7 +309,7 @@ func runner(commandTemplate string, buildStarted <-chan string, buildSuccess <-c
 }
 
 func killProcess(process *os.Process) {
-	if *flag_gracefulkill {
+	if *flagGracefulKill {
 		killProcessGracefully(process)
 	} else {
 		killProcessHard(process)
@@ -322,7 +320,7 @@ func killProcessHard(process *os.Process) {
 	log.Println(okColor("Hard stopping the current process.."))
 
 	if err := process.Kill(); err != nil {
-		log.Println(failColor("Warning: could not kill child process.  It may have already exited."))
+		log.Println(failColor("Warning: could not kill child process. It may have already exited."))
 	}
 
 	if _, err := process.Wait(); err != nil {
@@ -343,7 +341,7 @@ func killProcessGracefully(process *os.Process) {
 	}()
 
 	select {
-	case <-time.After(time.Duration(*flag_gracefultimeout) * time.Second):
+	case <-time.After(time.Duration(*flagGracefulTimeout) * time.Second):
 		log.Println(failColor("Could not gracefully stop the current process, proceeding to hard stop."))
 		killProcessHard(process)
 		<-done
@@ -362,22 +360,24 @@ func flusher(buildStarted <-chan string, buildSuccess <-chan bool) {
 }
 
 func main() {
-	flag.Var(&flag_excludedDirs, "exclude-dir", " Don't watch directories matching this name")
-	flag.Var(&flag_excludedFiles, "exclude", " Don't watch files matching this name")
-	flag.Var(&flag_includedFiles, "include", " Watch files matching this name")
+	flag.Var(&flagExcludedDirs, "exclude-dir", " Don't watch directories matching this name")
+	flag.Var(&flagExcludedFiles, "exclude", " Don't watch files matching this name")
+	flag.Var(&flagIncludedFiles, "include", " Watch files matching this name")
 
 	flag.Parse()
 
-	if !*flag_logprefix {
+	if !*flagLogPrefix {
 		log.SetFlags(0)
 	}
 
-	if *flag_directory == "" {
+	if *flagDirectories == "" {
 		fmt.Fprintf(os.Stderr, "-directory=... is required.\n")
 		os.Exit(1)
 	}
 
-	if *flag_gracefulkill && !gracefulTerminationPossible() {
+	directories := strings.Split(*flagDirectories, ",")
+
+	if *flagGracefulKill && !gracefulTerminationPossible() {
 		log.Fatal("Graceful termination is not supported on your platform.")
 	}
 
@@ -389,44 +389,47 @@ func main() {
 
 	defer watcher.Close()
 
-	if *flag_recursive == true {
-		err = filepath.Walk(*flag_directory, func(path string, info os.FileInfo, err error) error {
-			if err == nil && info.IsDir() {
-				if flag_excludedDirs.Matches(path) {
-					return filepath.SkipDir
-				} else {
-					if *flag_verbose {
-						log.Printf("Watching directory '%s' for changes.\n", path)
+	if *flagRecursive == true {
+		for _, d := range directories {
+			err = filepath.Walk(d, func(path string, info os.FileInfo, err error) error {
+				if err == nil && info.IsDir() {
+					if flagExcludedDirs.Matches(path) {
+						return filepath.SkipDir
+					} else {
+						if *flagVerbose {
+							log.Printf("Watching directory '%s' for changes.\n", path)
+						}
+						return watcher.Add(path)
 					}
-					return watcher.Add(path)
 				}
+				return err
+			})
+
+			if err != nil {
+				log.Fatal("filepath.Walk():", err)
 			}
-			return err
-		})
 
-		if err != nil {
-			log.Fatal("filepath.Walk():", err)
+			if err := watcher.Add(d); err != nil {
+				log.Fatal("watcher.Add():", err)
+			}
 		}
-
-		if err := watcher.Add(*flag_directory); err != nil {
-			log.Fatal("watcher.Add():", err)
-		}
-
 	} else {
-		if err := watcher.Add(*flag_directory); err != nil {
-			log.Fatal("watcher.Add():", err)
+		for _, d := range directories {
+			if err := watcher.Add(d); err != nil {
+				log.Fatal("watcher.Add():", err)
+			}
 		}
 	}
 
-	pattern := regexp.MustCompile(*flag_pattern)
+	pattern := regexp.MustCompile(*flagPattern)
 	jobs := make(chan string)
 	buildSuccess := make(chan bool)
 	buildStarted := make(chan string)
 
 	go builder(jobs, buildStarted, buildSuccess)
 
-	if *flag_command != "" {
-		go runner(*flag_command, buildStarted, buildSuccess)
+	if *flagCommand != "" {
+		go runner(*flagCommand, buildStarted, buildSuccess)
 	} else {
 		go flusher(buildStarted, buildSuccess)
 	}
@@ -438,12 +441,12 @@ func main() {
 				base := filepath.Base(ev.Name)
 
 				// Assume it is a directory and track it.
-				if *flag_recursive == true && !flag_excludedDirs.Matches(ev.Name) {
+				if *flagRecursive == true && !flagExcludedDirs.Matches(ev.Name) {
 					watcher.Add(ev.Name)
 				}
 
-				if flag_includedFiles.Matches(base) || matchesPattern(pattern, ev.Name) {
-					if !flag_excludedFiles.Matches(base) {
+				if flagIncludedFiles.Matches(base) || matchesPattern(pattern, ev.Name) {
+					if !flagExcludedFiles.Matches(base) {
 						jobs <- ev.Name
 					}
 				}
