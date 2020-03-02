@@ -21,7 +21,8 @@ You can use the `go` tool to install `CompileDaemon`:
 |`-build=…`   | go build    | Specify the command to run when rebuilding is required.|
 |`-command=…` | *none*      | Specify the command to run after a succesful build. The default is to run nothing. This command is issued with the working directory set to -directory.|
 | | | **file selection** |
-|`-directory=…` | . | Which directory to watch.|
+|`-directory=…` | . | Which directory to run commands from|
+|`-directories=…` | . | Which directories (comma separated) to watch|
 |`-recursive=…` | true      | Recurse down the specified directory|
 |`-exclude-dir=…` | none | Do not watch directories matching this glob pattern, e.g. ".git". You may have multiples of this flag.|
 |`-exclude=…` | none | Exclude files matching this glob pattern, e.g. ".#*" ignores emacs temporary files. You may have multiples of this flag.|

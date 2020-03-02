@@ -39,7 +39,8 @@ Options
 There are command line options.
 
 	FILE SELECTION
-	-directory=XXX    – Which directory to monitor for changes
+	-directory=XXX    – Directory to run commands from
+	-directories=XXX  - Which directories to monitor for changes
 	-recursive=XXX    – Look into subdirectories
 	-exclude-dir=XXX  – Exclude directories matching glob pattern XXX
 	-exlude=XXX       – Exclude files whose basename matches glob pattern XXX
@@ -371,7 +372,7 @@ func main() {
 	}
 
 	if *flagDirectories == "" {
-		fmt.Fprintf(os.Stderr, "-directory=... is required.\n")
+		fmt.Fprintf(os.Stderr, "-directories=... is required.\n")
 		os.Exit(1)
 	}
 
